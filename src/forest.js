@@ -331,22 +331,24 @@ function createTrees(group, originX, originZ, assets, random) {
     trees.push({ x: worldX, z: worldZ, radius: 0.55 });
   }
 
+  roots.count = rootIndex;
+  branches.count = branchIndex;
+  leaves.count = leafIndex;
+  pines.count = pineIndex;
+
+  // Trunks and rocks cast the key shadows; tiny leaves and twigs stay unshadowed for speed.
   trunks.castShadow = true;
   trunks.receiveShadow = true;
-  roots.castShadow = true;
-  branches.castShadow = true;
-  leaves.castShadow = true;
+  roots.castShadow = false;
+  branches.castShadow = false;
+  leaves.castShadow = false;
   leaves.receiveShadow = true;
-  pines.castShadow = true;
+  pines.castShadow = false;
   for (const mesh of [trunks, roots, branches, leaves, pines]) {
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
     group.add(mesh);
   }
-  roots.count = rootIndex;
-  branches.count = branchIndex;
-  leaves.count = leafIndex;
-  pines.count = pineIndex;
   return trees;
 }
 

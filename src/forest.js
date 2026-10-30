@@ -1,64 +1,220 @@
 import * as THREE from 'three';
 
-const rand = (min, max) => min + Math.random() * (max - min);
+export const CHUNK_SIZE = 200;
+const CHUNK_RADIUS = 1;
+
+const clamp = THREE.MathUtils.clamp;
 
 export function terrainHeight(x, z) {
-  const broad = Math.sin(x * 0.0065 + Math.sin(z * 0.0038) * 0.7) * 2.6
-    + Math.cos(z * 0.0074 - Math.sin(x * 0.004) * 0.55) * 2.35;
-  const middle = Math.sin((x + z) * 0.014) * 1.05
-    + Math.cos((x - z) * 0.018) * 0.72;
-  const fine = Math.sin(x * 0.035 + z * 0.021) * 0.18
-    + Math.cos(z * 0.031 - x * 0.024) * 0.16;
-  const hillA = 5.5 * Math.exp(-(((x - 115) ** 2) / 10500 + ((z - 155) ** 2) / 18000));
-  const hillB = 4.2 * Math.exp(-(((x + 175) ** 2) / 15000 + ((z - 285) ** 2) / 12000));
-  const hillC = 3.6 * Math.exp(-(((x - 245) ** 2) / 18000 + ((z + 165) ** 2) / 14500));
-  return broad + middle + fine + hillA + hillB + hillC;
+  // Layered, continuous terrain: these functions have no map edge.
+  const broad = Math.sin(x * 0.0052 + Math.sin(z * 0.0028) * 0.65) * 2.8
+    + Math.cos(z * 0.0061 - Math.sin(x * 0.0034) * 0.5) * 2.4;
+  const rolling = Math.sin((x + z) * 0.0105) * 1.2
+    + Math.cos((x - z) * 0.013) * 0.95
+    + Math.sin(x * 0.018 + z * 0.009) * 0.42;
+  const small = Math.sin(x * 0.035 + Math.cos(z * 0.021)) * 0.18
+    + Math.cos(z * 0.032 - x * 0.019) * 0.14;
+  return broad + rolling + small;
 }
 
 export function pathCenterX(z) {
-  const distance = z + 12;
-  return Math.sin(distance * 0.012) * 7.2 + Math.sin(distance * 0.031) * 2.1;
+  return Math.sin(z * 0.0055) * 10
+    + Math.sin(z * 0.017) * 2.6
+    + Math.sin(z * 0.0021) * 8;
 }
 
-function createPath(scene) {
+function seededRandom(cx, cz) {
+  let seed = ((Math.imul(cx + 8192, 73856093) ^ Math.imul(cz + 8192, 19349663)) >>> 0) || 1;
+  return () => {
+    seed += 0x6D2B79F5;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const randomBetween = (random, min, max) => min + random() * (max - min);
+
+function makeGroundTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 512;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#847354';
-  ctx.fillRect(0, 0, 512, 512);
-  for (let i = 0; i < 9000; i++) {
-    const shade = Math.random();
-    ctx.fillStyle = shade > 0.55 ? 'rgba(43,35,25,.13)' : 'rgba(222,207,170,.10)';
+  const image = ctx.createImageData(512, 512);
+  for (let y = 0; y < 512; y++) {
+    for (let x = 0; x < 512; x++) {
+      const i = (y * 512 + x) * 4;
+      const n = Math.random() * 18;
+      const fleck = Math.sin(x * 0.11 + Math.sin(y * 0.08) * 2) * 3;
+      image.data[i] = 49 + n + fleck;
+      image.data[i + 1] = 72 + n * 1.35 + fleck;
+      image.data[i + 2] = 39 + n * 0.6;
+      image.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  for (let i = 0; i < 2600; i++) {
+    ctx.fillStyle = Math.random() > 0.52 ? 'rgba(23,35,19,.28)' : 'rgba(181,148,83,.22)';
     ctx.beginPath();
-    ctx.ellipse(rand(0, 512), rand(0, 512), rand(0.5, 3.8), rand(0.5, 2.2), rand(0, Math.PI), 0, Math.PI * 2);
+    ctx.ellipse(Math.random() * 512, Math.random() * 512, 1 + Math.random() * 4, 0.6 + Math.random() * 2, Math.random() * Math.PI, 0, Math.PI * 2);
     ctx.fill();
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1.4, 1);
-  texture.anisotropy = 8;
+  texture.repeat.set(7, 7);
+  texture.anisotropy = 4;
+  return texture;
+}
 
-  const segments = 280;
-  const startZ = -24;
-  const endZ = 485;
-  const halfWidth = 5.7;
+function makeBarkTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+  gradient.addColorStop(0, '#30221a');
+  gradient.addColorStop(0.18, '#694a32');
+  gradient.addColorStop(0.42, '#493326');
+  gradient.addColorStop(0.68, '#856044');
+  gradient.addColorStop(0.86, '#513728');
+  gradient.addColorStop(1, '#2f241c');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 256, 512);
+  for (let i = 0; i < 1150; i++) {
+    const x = Math.random() * 256;
+    const y = Math.random() * 512;
+    ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(19,12,8,.35)' : 'rgba(219,175,119,.19)';
+    ctx.lineWidth = 0.4 + Math.random() * 2.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.bezierCurveTo(x + (Math.random() - 0.5) * 8, y + 40, x + (Math.random() - 0.5) * 6, y + 105, x + (Math.random() - 0.5) * 10, y + 90 + Math.random() * 160);
+    ctx.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 2);
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function makeLeafTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#547744';
+  ctx.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 700; i++) {
+    const shade = Math.random();
+    ctx.fillStyle = shade > 0.62 ? 'rgba(17,53,25,.30)' : 'rgba(189,204,119,.24)';
+    ctx.beginPath();
+    ctx.arc(Math.random() * 128, Math.random() * 128, 0.5 + Math.random() * 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 1);
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function makePathTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#806d4e';
+  ctx.fillRect(0, 0, 256, 512);
+  for (let i = 0; i < 6500; i++) {
+    const shade = Math.random();
+    ctx.fillStyle = shade > 0.5 ? 'rgba(40,31,21,.17)' : 'rgba(218,196,151,.16)';
+    ctx.beginPath();
+    ctx.ellipse(Math.random() * 256, Math.random() * 512, 0.5 + Math.random() * 2.8, 0.5 + Math.random() * 2, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1.6, 6);
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function createSharedAssets() {
+  const bark = makeBarkTexture();
+  const leaves = makeLeafTexture();
+  const ground = makeGroundTexture();
+  const path = makePathTexture();
+
+  return {
+    groundTexture: ground,
+    pathMaterial: new THREE.MeshStandardMaterial({ map: path, color: 0xc7b38c, roughness: 1, side: THREE.DoubleSide }),
+    trunkMaterial: new THREE.MeshStandardMaterial({ map: bark, bumpMap: bark, bumpScale: 0.055, color: 0xe0c09b, roughness: 1 }),
+    branchMaterial: new THREE.MeshStandardMaterial({ map: bark, bumpMap: bark, bumpScale: 0.035, color: 0xb58b65, roughness: 1 }),
+    leafMaterial: new THREE.MeshStandardMaterial({ map: leaves, color: 0xffffff, roughness: 0.96 }),
+    pineMaterial: new THREE.MeshStandardMaterial({ map: leaves, color: 0x537848, roughness: 0.98 }),
+    grassMaterial: new THREE.MeshStandardMaterial({ color: 0x789858, side: THREE.DoubleSide, roughness: 1 }),
+    rockMaterial: new THREE.MeshStandardMaterial({ color: 0x77796f, roughness: 1 }),
+    trunkGeometry: new THREE.CylinderGeometry(0.25, 0.5, 1, 10, 4),
+    rootGeometry: new THREE.CylinderGeometry(0.055, 0.24, 1, 7, 1),
+    branchGeometry: new THREE.CylinderGeometry(0.025, 0.105, 1, 7, 1),
+    leafGeometry: new THREE.SphereGeometry(1, 10, 8),
+    pineGeometry: new THREE.ConeGeometry(1, 1, 9, 2),
+    grassGeometry: new THREE.BufferGeometry(),
+    rockGeometry: new THREE.DodecahedronGeometry(1, 1)
+  };
+}
+
+function setBetween(mesh, index, start, end, dummy) {
+  const direction = new THREE.Vector3().subVectors(end, start);
+  const length = direction.length();
+  dummy.position.addVectors(start, end).multiplyScalar(0.5);
+  dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  dummy.scale.set(1, length, 1);
+  dummy.updateMatrix();
+  mesh.setMatrixAt(index, dummy.matrix);
+}
+
+function createGround(group, originX, originZ, assets) {
+  const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, 48, 48);
+  const positions = geometry.attributes.position;
+  const half = CHUNK_SIZE / 2;
+  for (let i = 0; i < positions.count; i++) {
+    const x = originX + half + positions.getX(i);
+    const z = originZ + half - positions.getY(i);
+    positions.setZ(i, terrainHeight(x, z));
+  }
+  geometry.computeVertexNormals();
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+    map: assets.groundTexture, color: 0xc3d09e, roughness: 1
+  }));
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(originX + half, 0, originZ + half);
+  mesh.receiveShadow = true;
+  group.add(mesh);
+}
+
+function createPath(group, originX, originZ, assets) {
+  const segments = 110;
+  const halfWidth = 6.8;
   const vertices = [];
   const uvs = [];
   const indices = [];
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
-    const z = THREE.MathUtils.lerp(startZ, endZ, t);
-    const x = pathCenterX(z);
-    const dx = pathCenterX(z + 0.8) - pathCenterX(z - 0.8);
-    const length = Math.hypot(dx, 1.6);
-    const nx = 1.6 / length;
+    const z = originZ + t * CHUNK_SIZE;
+    const center = pathCenterX(z);
+    const dx = pathCenterX(z + 0.75) - pathCenterX(z - 0.75);
+    const length = Math.hypot(dx, 1.5);
+    const nx = 1.5 / length;
     const nz = -dx / length;
     for (const side of [-1, 1]) {
-      const px = x + nx * halfWidth * side;
-      const pz = z + nz * halfWidth * side;
-      vertices.push(px, terrainHeight(px, pz) + 0.16, pz);
-      uvs.push(side === -1 ? 0 : 1, t * 30);
+      const x = center + nx * halfWidth * side;
+      const zz = z + nz * halfWidth * side;
+      vertices.push(x - originX, terrainHeight(x, zz) + 0.15, zz - originZ);
+      uvs.push(side < 0 ? 0 : 1, t * 12);
     }
     if (i < segments) {
       const a = i * 2;
@@ -70,221 +226,184 @@ function createPath(scene) {
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  const path = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-    map: texture, color: 0xc4b18b, roughness: 1, side: THREE.DoubleSide
-  }));
-  path.receiveShadow = true;
-  scene.add(path);
+  const mesh = new THREE.Mesh(geometry, assets.pathMaterial);
+  mesh.receiveShadow = true;
+  group.add(mesh);
 }
 
-function makeGroundTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-  const image = ctx.createImageData(512, 512);
-  for (let y = 0; y < 512; y++) {
-    for (let x = 0; x < 512; x++) {
-      const i = (y * 512 + x) * 4;
-      const n = Math.random() * 21;
-      const fleck = Math.sin(x * 0.14 + Math.sin(y * 0.07) * 2) * 3;
-      image.data[i] = 55 + n + fleck;
-      image.data[i + 1] = 78 + n * 1.4 + fleck;
-      image.data[i + 2] = 42 + n * 0.55;
-      image.data[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(image, 0, 0);
-  // scattered leaf litter and tiny soil flecks
-  for (let i = 0; i < 1900; i++) {
-    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(25,42,23,.25)' : 'rgba(178,154,92,.24)';
-    ctx.beginPath();
-    ctx.ellipse(rand(0, 512), rand(0, 512), rand(1, 4), rand(1, 2), rand(0, Math.PI), 0, Math.PI * 2);
-    ctx.fill();
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(12, 12);
-  texture.anisotropy = 8;
-  return texture;
-}
-
-function setInstance(mesh, index, position, rotation, scale) {
+function createTrees(group, originX, originZ, assets, random) {
+  const count = 58 + Math.floor(random() * 25);
+  const trunks = new THREE.InstancedMesh(assets.trunkGeometry, assets.trunkMaterial, count);
+  const roots = new THREE.InstancedMesh(assets.rootGeometry, assets.branchMaterial, count * 4);
+  const branches = new THREE.InstancedMesh(assets.branchGeometry, assets.branchMaterial, count * 3);
+  const leaves = new THREE.InstancedMesh(assets.leafGeometry, assets.leafMaterial, count * 6);
+  const pines = new THREE.InstancedMesh(assets.pineGeometry, assets.pineMaterial, count * 3);
   const dummy = new THREE.Object3D();
-  dummy.position.copy(position);
-  dummy.rotation.set(rotation.x, rotation.y, rotation.z);
-  dummy.scale.set(scale.x, scale.y, scale.z);
-  dummy.updateMatrix();
-  mesh.setMatrixAt(index, dummy.matrix);
-}
+  const v = (x, y, z) => new THREE.Vector3(x, y, z);
+  const trees = [];
+  let rootIndex = 0;
+  let branchIndex = 0;
+  let leafIndex = 0;
+  let pineIndex = 0;
 
-function between(a, b) {
-  const direction = new THREE.Vector3().subVectors(b, a);
-  const length = direction.length();
-  const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  return { midpoint: new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5), quaternion, length };
-}
+  for (let i = 0; i < count; i++) {
+    let x;
+    let z;
+    let attempts = 0;
+    do {
+      x = randomBetween(random, 7, CHUNK_SIZE - 7);
+      z = randomBetween(random, 7, CHUNK_SIZE - 7);
+      attempts++;
+    } while (Math.abs(originX + x - pathCenterX(originZ + z)) < 14 && attempts < 100);
 
+    const worldX = originX + x;
+    const worldZ = originZ + z;
+    const ground = terrainHeight(worldX, worldZ);
+    const height = randomBetween(random, 11, 19);
+    const radius = randomBetween(random, 2.6, 4.4);
+    const leanX = randomBetween(random, -0.045, 0.045);
+    const leanZ = randomBetween(random, -0.045, 0.045);
+    const base = v(x, ground, z);
 
-function makeBarkTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-  const gradient = ctx.createLinearGradient(0, 0, 256, 0);
-  gradient.addColorStop(0, '#39291f');
-  gradient.addColorStop(0.25, '#705039');
-  gradient.addColorStop(0.52, '#4d382a');
-  gradient.addColorStop(0.78, '#806047');
-  gradient.addColorStop(1, '#34271f');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 256, 512);
-  for (let i = 0; i < 900; i++) {
-    const x = rand(0, 256), y = rand(0, 512);
-    ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(25,15,10,.24)' : 'rgba(205,164,112,.13)';
-    ctx.lineWidth = rand(0.4, 2.4);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.bezierCurveTo(x + rand(-5, 5), y + 30, x + rand(-4, 4), y + 90, x + rand(-8, 8), y + rand(90, 220));
-    ctx.stroke();
+    dummy.position.set(x, ground + height / 2, z);
+    dummy.rotation.set(leanX, random() * Math.PI * 2, leanZ);
+    dummy.scale.set(randomBetween(random, 0.88, 1.18), height, randomBetween(random, 0.88, 1.18));
+    dummy.updateMatrix();
+    trunks.setMatrixAt(i, dummy.matrix);
+    const trunkTone = randomBetween(random, 0.78, 1.08);
+    trunks.setColorAt(i, new THREE.Color(trunkTone, trunkTone * 0.92, trunkTone * 0.78));
+
+    // Buttress roots widen the foot of each trunk and help it sit in the soil.
+    for (let r = 0; r < 4; r++) {
+      const angle = (r / 4) * Math.PI * 2 + random() * 0.4;
+      const start = base.clone().add(v(Math.cos(angle) * 0.14, 0.34, Math.sin(angle) * 0.14));
+      const end = base.clone().add(v(Math.cos(angle) * randomBetween(random, 0.75, 1.25), 0.04, Math.sin(angle) * randomBetween(random, 0.75, 1.25)));
+      setBetween(roots, rootIndex++, start, end, dummy);
+    }
+
+    // Branches leave the trunk at different heights and reach out beneath the canopy.
+    for (let b = 0; b < 3; b++) {
+      const start = base.clone().add(v(0, height * randomBetween(random, 0.48, 0.76), 0));
+      const angle = random() * Math.PI * 2;
+      const end = start.clone().add(v(Math.cos(angle) * randomBetween(random, 2.0, 3.8), randomBetween(random, 0.7, 2.2), Math.sin(angle) * randomBetween(random, 2.0, 3.8)));
+      setBetween(branches, branchIndex++, start, end, dummy);
+    }
+
+    const isPine = random() < 0.27;
+    if (isPine) {
+      for (let tier = 0; tier < 3; tier++) {
+        const y = ground + height * (0.48 + tier * 0.15);
+        const width = radius * (1.05 - tier * 0.23);
+        dummy.position.set(x, y, z);
+        dummy.rotation.set(randomBetween(random, -0.025, 0.025), random() * Math.PI * 2, randomBetween(random, -0.025, 0.025));
+        dummy.scale.set(width, height * 0.38, width);
+        dummy.updateMatrix();
+        pines.setMatrixAt(pineIndex, dummy.matrix);
+        const shade = randomBetween(random, 0.78, 1.18);
+        pines.setColorAt(pineIndex++, new THREE.Color(0.58 * shade, 0.82 * shade, 0.52 * shade));
+      }
+    } else {
+      // Overlapping, irregular leaf masses produce a fuller crown than a single ball.
+      const lobes = 6;
+      for (let c = 0; c < lobes; c++) {
+        const angle = (c / lobes) * Math.PI * 2 + random() * 0.28;
+        const spread = radius * (c === 0 ? 0.08 : 0.53);
+        const y = ground + height * (c === 0 ? 0.88 : randomBetween(random, 0.67, 0.9));
+        const size = radius * (c === 0 ? 1.08 : randomBetween(random, 0.68, 0.9));
+        dummy.position.set(x + Math.cos(angle) * spread, y, z + Math.sin(angle) * spread);
+        dummy.rotation.set(randomBetween(random, -0.12, 0.12), random() * Math.PI * 2, randomBetween(random, -0.12, 0.12));
+        dummy.scale.set(size * randomBetween(random, 0.86, 1.12), size * randomBetween(random, 0.78, 1.1), size * randomBetween(random, 0.86, 1.12));
+        dummy.updateMatrix();
+        leaves.setMatrixAt(leafIndex, dummy.matrix);
+        const shade = randomBetween(random, 0.78, 1.2);
+        leaves.setColorAt(leafIndex++, new THREE.Color(0.52 * shade, 0.82 * shade, 0.48 * shade));
+      }
+    }
+    trees.push({ x: worldX, z: worldZ, radius: 0.55 });
   }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1, 2);
-  texture.anisotropy = 8;
-  return texture;
-}
 
-function createTrees(scene) {
-  const treeCount = 1050;
-  const trunkGeometry = new THREE.CylinderGeometry(0.30, 0.56, 1, 10, 2);
-  const trunkMaterial = new THREE.MeshStandardMaterial({ map: makeBarkTexture(), color: 0xc2a17c, roughness: 1 });
-  const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, treeCount);
   trunks.castShadow = true;
   trunks.receiveShadow = true;
-  scene.add(trunks);
-
-  const branchGeometry = new THREE.CylinderGeometry(0.045, 0.13, 1, 6, 1);
-  const branches = new THREE.InstancedMesh(branchGeometry, trunkMaterial, treeCount * 3);
+  roots.castShadow = true;
   branches.castShadow = true;
-  scene.add(branches);
-
-  const crownGeometry = new THREE.IcosahedronGeometry(1, 2);
-  const leafMaterials = [
-    new THREE.MeshStandardMaterial({ color: 0x315c32, roughness: 0.96 }),
-    new THREE.MeshStandardMaterial({ color: 0x3d6c38, roughness: 0.96 }),
-    new THREE.MeshStandardMaterial({ color: 0x4a773d, roughness: 0.96 }),
-    new THREE.MeshStandardMaterial({ color: 0x294f2d, roughness: 0.96 })
-  ];
-  const crowns = leafMaterials.map(material => {
-    const instanced = new THREE.InstancedMesh(crownGeometry, material, treeCount * 6);
-    instanced.castShadow = true;
-    instanced.receiveShadow = true;
-    scene.add(instanced);
-    return instanced;
-  });
-  const dummy = new THREE.Object3D();
-  const crownCounts = [0, 0, 0, 0];
-  let branchIndex = 0;
-  const positions = [];
-
-  for (let i = 0; i < treeCount; i++) {
-    const angle = rand(0, Math.PI * 2);
-    const distance = Math.sqrt(Math.random()) * 405;
-    const x = Math.cos(angle) * distance;
-    const z = Math.sin(angle) * distance;
-    // Keep one continuous open corridor for the broad trail.
-    if (z > -35 && z < 510 && Math.abs(x - pathCenterX(z)) < 12.5) { i--; continue; }
-    if (Math.hypot(x, z) < 13) { i--; continue; }
-    const ground = terrainHeight(x, z);
-    const height = rand(10, 18);
-    const radius = rand(2.5, 4.8);
-    const leanX = rand(-0.07, 0.07);
-    const leanZ = rand(-0.06, 0.06);
-    positions.push({ x, z, ground, height, radius });
-    setInstance(trunks, i, new THREE.Vector3(x, ground + height / 2, z), new THREE.Euler(leanX, rand(0, Math.PI * 2), leanZ), new THREE.Vector3(rand(0.85, 1.18), height, rand(0.85, 1.18)));
-
-    for (let b = 0; b < 3; b++) {
-      const start = new THREE.Vector3(x, ground + height * rand(0.48, 0.75), z);
-      const a = rand(0, Math.PI * 2);
-      const end = start.clone().add(new THREE.Vector3(Math.cos(a) * rand(2.4, 4), rand(0.8, 2.7), Math.sin(a) * rand(2.4, 4)));
-      const branch = between(start, end);
-      dummy.position.copy(branch.midpoint);
-      dummy.quaternion.copy(branch.quaternion);
-      dummy.scale.set(1, branch.length, 1);
-      dummy.updateMatrix();
-      branches.setMatrixAt(branchIndex++, dummy.matrix);
-    }
-
-    const crownCount = 5 + Math.floor(Math.random() * 2);
-    for (let c = 0; c < crownCount; c++) {
-      const materialIndex = Math.floor(rand(0, leafMaterials.length));
-      const mesh = crowns[materialIndex];
-      const id = crownCounts[materialIndex]++;
-      const y = ground + height * rand(0.68, 1.04);
-      const spread = radius * (c === 0 ? 0.72 : 1);
-      dummy.position.set(x + rand(-spread, spread), y, z + rand(-spread, spread));
-      dummy.rotation.set(rand(-0.2, 0.2), rand(0, Math.PI * 2), rand(-0.2, 0.2));
-      const r = radius * (c === 0 ? 1.15 : rand(0.62, 0.96));
-      dummy.scale.set(r * rand(0.85, 1.1), r * rand(0.82, 1.18), r * rand(0.85, 1.1));
-      dummy.updateMatrix();
-      mesh.setMatrixAt(id, dummy.matrix);
-    }
+  leaves.castShadow = true;
+  leaves.receiveShadow = true;
+  pines.castShadow = true;
+  for (const mesh of [trunks, roots, branches, leaves, pines]) {
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    group.add(mesh);
   }
-  trunks.instanceMatrix.needsUpdate = true;
-  branches.instanceMatrix.needsUpdate = true;
-  crowns.forEach((mesh, index) => { mesh.count = crownCounts[index]; mesh.instanceMatrix.needsUpdate = true; });
-  return positions;
+  roots.count = rootIndex;
+  branches.count = branchIndex;
+  leaves.count = leafIndex;
+  pines.count = pineIndex;
+  return trees;
 }
 
-function createGroundDetails(scene) {
-  const grassGeometry = new THREE.BufferGeometry();
-  const vertices = new Float32Array([
-    -0.05, 0, 0, 0.05, 0, 0, -0.015, 0.42, 0,
-    0, 0, -0.05, 0, 0, 0.05, 0.06, 0.34, 0
-  ]);
-  grassGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-  grassGeometry.computeVertexNormals();
-  const grass = new THREE.InstancedMesh(grassGeometry, new THREE.MeshStandardMaterial({ color: 0x719653, side: THREE.DoubleSide, roughness: 1 }), 8500);
-  const obj = new THREE.Object3D();
-  for (let i = 0; i < 8500; i++) {
-    const x = rand(-440, 440), z = rand(-440, 440);
-    if (z > -35 && z < 510 && Math.abs(x - pathCenterX(z)) < 6.0) { i--; continue; }
-    obj.position.set(x, terrainHeight(x, z) + 0.03, z);
-    obj.rotation.y = rand(0, Math.PI * 2);
-    const s = rand(0.65, 1.5);
-    obj.scale.set(s, s, s);
-    obj.updateMatrix();
-    grass.setMatrixAt(i, obj.matrix);
+function createGroundDetails(group, originX, originZ, assets, random) {
+  const grass = new THREE.InstancedMesh(assets.grassGeometry, assets.grassMaterial, 1050);
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < 1050; i++) {
+    const x = randomBetween(random, 1, CHUNK_SIZE - 1);
+    const z = randomBetween(random, 1, CHUNK_SIZE - 1);
+    const worldX = originX + x;
+    const worldZ = originZ + z;
+    if (Math.abs(worldX - pathCenterX(worldZ)) < 7.4) { i--; continue; }
+    dummy.position.set(x, terrainHeight(worldX, worldZ) + 0.025, z);
+    dummy.rotation.set(0, random() * Math.PI * 2, 0);
+    const scale = randomBetween(random, 0.55, 1.35);
+    dummy.scale.set(scale, scale, scale);
+    dummy.updateMatrix();
+    grass.setMatrixAt(i, dummy.matrix);
   }
   grass.instanceMatrix.needsUpdate = true;
+  grass.computeBoundingSphere();
   grass.castShadow = false;
-  grass.receiveShadow = false;
-  scene.add(grass);
+  group.add(grass);
 
-  const rockGeometry = new THREE.DodecahedronGeometry(1, 1);
-  const rocks = new THREE.InstancedMesh(rockGeometry, new THREE.MeshStandardMaterial({ color: 0x6f7566, roughness: 1 }), 320);
-  for (let i = 0; i < 320; i++) {
-    const x = rand(-430, 430), z = rand(-430, 430);
-    if (z > -35 && z < 510 && Math.abs(x - pathCenterX(z)) < 6.0) { i--; continue; }
-    obj.position.set(x, terrainHeight(x, z) + 0.15, z);
-    obj.rotation.set(rand(0, 1), rand(0, Math.PI * 2), rand(0, 1));
-    obj.scale.set(rand(0.28, 1.15), rand(0.2, 0.82), rand(0.3, 1.25));
-    obj.updateMatrix();
-    rocks.setMatrixAt(i, obj.matrix);
-    const shades = [0x666b63, 0x77796f, 0x8b877a, 0x5d625e, 0x9a9282];
-    rocks.setColorAt(i, new THREE.Color(shades[Math.floor(rand(0, shades.length))]));
+  const rocks = new THREE.InstancedMesh(assets.rockGeometry, assets.rockMaterial, 28);
+  const stoneColors = [0x666d65, 0x777a70, 0x908c7d, 0x5c625e, 0x9b9485];
+  for (let i = 0; i < 28; i++) {
+    const x = randomBetween(random, 3, CHUNK_SIZE - 3);
+    const z = randomBetween(random, 3, CHUNK_SIZE - 3);
+    const worldX = originX + x;
+    const worldZ = originZ + z;
+    if (Math.abs(worldX - pathCenterX(worldZ)) < 8.2) { i--; continue; }
+    dummy.position.set(x, terrainHeight(worldX, worldZ) + 0.16, z);
+    dummy.rotation.set(random() * 0.9, random() * Math.PI * 2, random() * 0.9);
+    dummy.scale.set(randomBetween(random, 0.25, 0.95), randomBetween(random, 0.18, 0.66), randomBetween(random, 0.3, 1.05));
+    dummy.updateMatrix();
+    rocks.setMatrixAt(i, dummy.matrix);
+    rocks.setColorAt(i, new THREE.Color(stoneColors[Math.floor(random() * stoneColors.length)]));
   }
   rocks.instanceMatrix.needsUpdate = true;
+  rocks.computeBoundingSphere();
   rocks.castShadow = true;
   rocks.receiveShadow = true;
-  scene.add(rocks);
+  group.add(rocks);
+}
+
+function createChunk(scene, cx, cz, assets) {
+  const originX = cx * CHUNK_SIZE;
+  const originZ = cz * CHUNK_SIZE;
+  const random = seededRandom(cx, cz);
+  const group = new THREE.Group();
+  group.position.set(originX, 0, originZ);
+  group.name = `forest-chunk-${cx}-${cz}`;
+  scene.add(group);
+
+  createGround(group, originX, originZ, assets);
+  const pathChunkX = Math.floor(pathCenterX(originZ + CHUNK_SIZE / 2) / CHUNK_SIZE);
+  if (cx === pathChunkX) createPath(group, originX, originZ, assets);
+  const trees = createTrees(group, originX, originZ, assets, random);
+  createGroundDetails(group, originX, originZ, assets, random);
+  return { group, trees, cx, cz };
 }
 
 function createSky(scene) {
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(850, 32, 16),
+    new THREE.SphereGeometry(1500, 24, 12),
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
@@ -293,39 +412,96 @@ function createSky(scene) {
         varying vec3 vWorldPosition;
         void main(){
           float h=normalize(vWorldPosition).y;
-          vec3 horizon=vec3(0.71,0.80,0.72);
-          vec3 zenith=vec3(0.24,0.48,0.62);
+          vec3 horizon=vec3(0.72,0.80,0.72);
+          vec3 zenith=vec3(0.25,0.48,0.62);
           float t=smoothstep(-0.12,0.72,h);
           vec3 col=mix(horizon,zenith,t);
-          float haze=exp(-abs(h+0.02)*13.0)*0.12;
-          col=mix(col,vec3(0.88,0.86,0.71),haze);
+          float haze=exp(-abs(h+0.02)*13.0)*0.13;
+          col=mix(col,vec3(0.9,0.87,0.73),haze);
           gl_FragColor=vec4(col,1.0);
         }
       `
     })
   );
   scene.add(sky);
+  return sky;
 }
 
 export function createForest(scene) {
-  const groundTexture = makeGroundTexture();
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(1000, 1000, 220, 220),
-    new THREE.MeshStandardMaterial({ map: groundTexture, color: 0xc4d4a0, roughness: 1 })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  const pos = ground.geometry.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = -pos.getY(i);
-    pos.setZ(i, terrainHeight(x, z));
-  }
-  ground.geometry.computeVertexNormals();
-  ground.receiveShadow = true;
-  scene.add(ground);
+  const assets = createSharedAssets();
+  const chunks = new Map();
+  const pending = [];
+  let centerKey = '';
+  const sky = createSky(scene);
 
-  createPath(scene);
-  const trees = createTrees(scene);
-  createGroundDetails(scene);
-  createSky(scene);
-  return { trees };
+  // Build the spawn chunk immediately; its eight neighbors stream in over subsequent frames.
+  const first = createChunk(scene, 0, 0, assets);
+  chunks.set('0,0', first);
+
+  function update(x, z) {
+    const cx = Math.floor(x / CHUNK_SIZE);
+    const cz = Math.floor(z / CHUNK_SIZE);
+    const key = `${cx},${cz}`;
+
+    if (key !== centerKey) {
+      centerKey = key;
+      const wanted = [];
+      for (let dz = -CHUNK_RADIUS; dz <= CHUNK_RADIUS; dz++) {
+        for (let dx = -CHUNK_RADIUS; dx <= CHUNK_RADIUS; dx++) {
+          const nx = cx + dx;
+          const nz = cz + dz;
+          wanted.push({ cx: nx, cz: nz, key: `${nx},${nz}`, distance: dx * dx + dz * dz });
+        }
+      }
+      const wantedKeys = new Set(wanted.map(item => item.key));
+      for (const [chunkKey, chunk] of chunks) {
+        if (!wantedKeys.has(chunkKey)) {
+          scene.remove(chunk.group);
+          chunk.group.traverse(object => {
+            if (object.isMesh && object.geometry && object.geometry !== assets.trunkGeometry &&
+                object.geometry !== assets.rootGeometry && object.geometry !== assets.branchGeometry &&
+                object.geometry !== assets.leafGeometry && object.geometry !== assets.pineGeometry &&
+                object.geometry !== assets.grassGeometry && object.geometry !== assets.rockGeometry) {
+              object.geometry.dispose();
+            }
+          });
+          chunks.delete(chunkKey);
+        }
+      }
+      pending.length = 0;
+      wanted.sort((a, b) => a.distance - b.distance);
+      for (const item of wanted) {
+        if (!chunks.has(item.key)) pending.push(item);
+      }
+    }
+
+    // Add only one chunk per frame to prevent a large generation hitch.
+    if (pending.length) {
+      const item = pending.shift();
+      chunks.set(item.key, createChunk(scene, item.cx, item.cz, assets));
+    }
+    sky.position.set(x, terrainHeight(x, z), z);
+  }
+
+  function getNearbyTrees(x, z, radius = 2.2) {
+    const minX = Math.floor((x - radius) / CHUNK_SIZE);
+    const maxX = Math.floor((x + radius) / CHUNK_SIZE);
+    const minZ = Math.floor((z - radius) / CHUNK_SIZE);
+    const maxZ = Math.floor((z + radius) / CHUNK_SIZE);
+    const near = [];
+    for (let cz = minZ; cz <= maxZ; cz++) {
+      for (let cx = minX; cx <= maxX; cx++) {
+        const chunk = chunks.get(`${cx},${cz}`);
+        if (!chunk) continue;
+        for (const tree of chunk.trees) {
+          if (Math.abs(tree.x - x) <= radius + tree.radius && Math.abs(tree.z - z) <= radius + tree.radius) {
+            near.push(tree);
+          }
+        }
+      }
+    }
+    return near;
+  }
+
+  return { update, getNearbyTrees };
 }

@@ -10,7 +10,7 @@ const bottomHint = document.querySelector('#bottomHint');
 const speedValue = document.querySelector('#speedValue');
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -19,7 +19,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xa6b4a2, 0.00215);
+scene.fog = new THREE.FogExp2(0xa6b4a2, 0.00245);
 const camera = new THREE.PerspectiveCamera(78, window.innerWidth / window.innerHeight, 0.1, 1100);
 camera.rotation.order = 'YXZ';
 
@@ -215,13 +215,11 @@ function updateRide(dt, now) {
 
   // Keep the bicycle from passing through tree trunks.
   let hitTree = false;
-  for (const tree of forest.trees) {
+  for (const tree of forest.getNearbyTrees(player.position.x, player.position.z, 2.4)) {
     const dx = player.position.x - tree.x;
-    if (Math.abs(dx) > 1.25) continue;
     const dz = player.position.z - tree.z;
-    if (Math.abs(dz) > 1.25) continue;
     const distanceSq = dx * dx + dz * dz;
-    const minimum = 0.92;
+    const minimum = 0.88 + tree.radius;
     if (distanceSq < minimum * minimum) {
       const distance = Math.sqrt(distanceSq) || 0.001;
       const push = minimum - distance;
@@ -263,6 +261,9 @@ function animate(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.04);
   lastTime = now;
   if (locked) updateRide(dt, now);
+  forest.update(player.position.x, player.position.z);
+  sun.position.set(player.position.x - 90, player.position.y + 150, player.position.z + 70);
+  sun.target.position.copy(player.position);
   renderer.render(scene, camera);
 }
 requestAnimationFrame(animate);

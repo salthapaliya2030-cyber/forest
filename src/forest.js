@@ -414,7 +414,7 @@ function createChunk(scene, cx, cz, assets) {
 
 function createSky(scene) {
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(1500, 24, 12),
+    new THREE.SphereGeometry(850, 24, 12),
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,

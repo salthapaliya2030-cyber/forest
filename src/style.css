@@ -13,3 +13,8 @@
 .control-hint{margin-top:28px;color:#d9e3d0a0;font-size:9px;letter-spacing:.08em}.bottom-hint{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.14em;color:#edf1e2a8;text-shadow:0 1px 8px #0008;pointer-events:none;white-space:nowrap;transition:opacity .3s}
 .locked .bottom-hint{opacity:.4}.locked .hud-top{opacity:.65}
 @media(max-width:600px){.hud-top{padding:16px}.intro{padding:36px 20px 28px}.intro h1{letter-spacing:.08em}.control-hint{line-height:2}}
+
+.speedometer{position:absolute;left:28px;bottom:25px;display:flex;align-items:baseline;gap:7px;color:#f1f2df;text-shadow:0 2px 12px #000b;pointer-events:none;font-variant-numeric:tabular-nums}
+.speedometer span{font-size:28px;font-weight:800;letter-spacing:-.06em}
+.speedometer small{font-size:9px;letter-spacing:.2em;color:#e5e8d0b0;font-weight:700}
+@media(max-width:600px){.speedometer{left:16px;bottom:18px}.speedometer span{font-size:23px}.bottom-hint{left:auto;right:16px;transform:none;max-width:58%;text-align:right;white-space:normal}}

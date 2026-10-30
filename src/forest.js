@@ -324,7 +324,8 @@ export function createForest(scene) {
   scene.add(ground);
 
   createPath(scene);
-  createTrees(scene);
+  const trees = createTrees(scene);
   createGroundDetails(scene);
   createSky(scene);
+  return { trees };
 }

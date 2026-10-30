@@ -249,7 +249,8 @@ function createGroundDetails(scene) {
   const grass = new THREE.InstancedMesh(grassGeometry, new THREE.MeshStandardMaterial({ color: 0x719653, side: THREE.DoubleSide, roughness: 1 }), 8500);
   const obj = new THREE.Object3D();
   for (let i = 0; i < 8500; i++) {
-    const x = rand(-440, 440), z = rand(-275, 275);
+    const x = rand(-440, 440), z = rand(-440, 440);
+    if (z > -35 && z < 510 && Math.abs(x - pathCenterX(z)) < 6.0) { i--; continue; }
     obj.position.set(x, terrainHeight(x, z) + 0.03, z);
     obj.rotation.y = rand(0, Math.PI * 2);
     const s = rand(0.65, 1.5);
@@ -263,8 +264,8 @@ function createGroundDetails(scene) {
   scene.add(grass);
 
   const rockGeometry = new THREE.DodecahedronGeometry(1, 1);
-  const rocks = new THREE.InstancedMesh(rockGeometry, new THREE.MeshStandardMaterial({ color: 0x6f7566, roughness: 1 }), 150);
-  for (let i = 0; i < 150; i++) {
+  const rocks = new THREE.InstancedMesh(rockGeometry, new THREE.MeshStandardMaterial({ color: 0x6f7566, roughness: 1 }), 320);
+  for (let i = 0; i < 320; i++) {
     const x = rand(-430, 430), z = rand(-430, 430);
     if (z > -35 && z < 510 && Math.abs(x - pathCenterX(z)) < 6.0) { i--; continue; }
     obj.position.set(x, terrainHeight(x, z) + 0.15, z);
@@ -272,6 +273,8 @@ function createGroundDetails(scene) {
     obj.scale.set(rand(0.28, 1.15), rand(0.2, 0.82), rand(0.3, 1.25));
     obj.updateMatrix();
     rocks.setMatrixAt(i, obj.matrix);
+    const shades = [0x666b63, 0x77796f, 0x8b877a, 0x5d625e, 0x9a9282];
+    rocks.setColorAt(i, new THREE.Color(shades[Math.floor(rand(0, shades.length))]));
   }
   rocks.instanceMatrix.needsUpdate = true;
   rocks.castShadow = true;

@@ -3,8 +3,78 @@ import * as THREE from 'three';
 const rand = (min, max) => min + Math.random() * (max - min);
 
 export function terrainHeight(x, z) {
-  return Math.sin(x * 0.012) * 1.2 + Math.cos(z * 0.014) * 1.05
-    + Math.sin((x + z) * 0.025) * 0.48 + Math.cos((x - z) * 0.035) * 0.22;
+  const broad = Math.sin(x * 0.0065 + Math.sin(z * 0.0038) * 0.7) * 2.6
+    + Math.cos(z * 0.0074 - Math.sin(x * 0.004) * 0.55) * 2.35;
+  const middle = Math.sin((x + z) * 0.014) * 1.05
+    + Math.cos((x - z) * 0.018) * 0.72;
+  const fine = Math.sin(x * 0.035 + z * 0.021) * 0.18
+    + Math.cos(z * 0.031 - x * 0.024) * 0.16;
+  const hillA = 5.5 * Math.exp(-(((x - 115) ** 2) / 10500 + ((z - 155) ** 2) / 18000));
+  const hillB = 4.2 * Math.exp(-(((x + 175) ** 2) / 15000 + ((z - 285) ** 2) / 12000));
+  const hillC = 3.6 * Math.exp(-(((x - 245) ** 2) / 18000 + ((z + 165) ** 2) / 14500));
+  return broad + middle + fine + hillA + hillB + hillC;
+}
+
+export function pathCenterX(z) {
+  const distance = z + 12;
+  return Math.sin(distance * 0.012) * 7.2 + Math.sin(distance * 0.031) * 2.1;
+}
+
+function createPath(scene) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#847354';
+  ctx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 9000; i++) {
+    const shade = Math.random();
+    ctx.fillStyle = shade > 0.55 ? 'rgba(43,35,25,.13)' : 'rgba(222,207,170,.10)';
+    ctx.beginPath();
+    ctx.ellipse(rand(0, 512), rand(0, 512), rand(0.5, 3.8), rand(0.5, 2.2), rand(0, Math.PI), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1.4, 1);
+  texture.anisotropy = 8;
+
+  const segments = 280;
+  const startZ = -24;
+  const endZ = 485;
+  const halfWidth = 5.7;
+  const vertices = [];
+  const uvs = [];
+  const indices = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const z = THREE.MathUtils.lerp(startZ, endZ, t);
+    const x = pathCenterX(z);
+    const dx = pathCenterX(z + 0.8) - pathCenterX(z - 0.8);
+    const length = Math.hypot(dx, 1.6);
+    const nx = 1.6 / length;
+    const nz = -dx / length;
+    for (const side of [-1, 1]) {
+      const px = x + nx * halfWidth * side;
+      const pz = z + nz * halfWidth * side;
+      vertices.push(px, terrainHeight(px, pz) + 0.16, pz);
+      uvs.push(side === -1 ? 0 : 1, t * 30);
+    }
+    if (i < segments) {
+      const a = i * 2;
+      indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  const path = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+    map: texture, color: 0xc4b18b, roughness: 1, side: THREE.DoubleSide
+  }));
+  path.receiveShadow = true;
+  scene.add(path);
 }
 
 function makeGroundTexture() {
@@ -55,10 +125,41 @@ function between(a, b) {
   return { midpoint: new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5), quaternion, length };
 }
 
+
+function makeBarkTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+  gradient.addColorStop(0, '#39291f');
+  gradient.addColorStop(0.25, '#705039');
+  gradient.addColorStop(0.52, '#4d382a');
+  gradient.addColorStop(0.78, '#806047');
+  gradient.addColorStop(1, '#34271f');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 256, 512);
+  for (let i = 0; i < 900; i++) {
+    const x = rand(0, 256), y = rand(0, 512);
+    ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(25,15,10,.24)' : 'rgba(205,164,112,.13)';
+    ctx.lineWidth = rand(0.4, 2.4);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.bezierCurveTo(x + rand(-5, 5), y + 30, x + rand(-4, 4), y + 90, x + rand(-8, 8), y + rand(90, 220));
+    ctx.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 2);
+  texture.anisotropy = 8;
+  return texture;
+}
+
 function createTrees(scene) {
-  const treeCount = 440;
-  const trunkGeometry = new THREE.CylinderGeometry(0.24, 0.48, 1, 8, 1);
-  const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x705039, roughness: 0.94 });
+  const treeCount = 1050;
+  const trunkGeometry = new THREE.CylinderGeometry(0.30, 0.56, 1, 10, 2);
+  const trunkMaterial = new THREE.MeshStandardMaterial({ map: makeBarkTexture(), color: 0xc2a17c, roughness: 1 });
   const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, treeCount);
   trunks.castShadow = true;
   trunks.receiveShadow = true;
@@ -90,11 +191,12 @@ function createTrees(scene) {
 
   for (let i = 0; i < treeCount; i++) {
     const angle = rand(0, Math.PI * 2);
-    const distance = Math.sqrt(Math.random()) * 245;
+    const distance = Math.sqrt(Math.random()) * 405;
     const x = Math.cos(angle) * distance;
     const z = Math.sin(angle) * distance;
-    // Keep a small natural clearing around the player's starting point.
-    if (Math.hypot(x, z) < 15) { i--; continue; }
+    // Keep one continuous open corridor for the broad trail.
+    if (z > -35 && z < 510 && Math.abs(x - pathCenterX(z)) < 12.5) { i--; continue; }
+    if (Math.hypot(x, z) < 13) { i--; continue; }
     const ground = terrainHeight(x, z);
     const height = rand(10, 18);
     const radius = rand(2.5, 4.8);
@@ -144,10 +246,10 @@ function createGroundDetails(scene) {
   ]);
   grassGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
   grassGeometry.computeVertexNormals();
-  const grass = new THREE.InstancedMesh(grassGeometry, new THREE.MeshStandardMaterial({ color: 0x719653, side: THREE.DoubleSide, roughness: 1 }), 3500);
+  const grass = new THREE.InstancedMesh(grassGeometry, new THREE.MeshStandardMaterial({ color: 0x719653, side: THREE.DoubleSide, roughness: 1 }), 8500);
   const obj = new THREE.Object3D();
-  for (let i = 0; i < 3500; i++) {
-    const x = rand(-275, 275), z = rand(-275, 275);
+  for (let i = 0; i < 8500; i++) {
+    const x = rand(-440, 440), z = rand(-275, 275);
     obj.position.set(x, terrainHeight(x, z) + 0.03, z);
     obj.rotation.y = rand(0, Math.PI * 2);
     const s = rand(0.65, 1.5);
@@ -163,10 +265,11 @@ function createGroundDetails(scene) {
   const rockGeometry = new THREE.DodecahedronGeometry(1, 1);
   const rocks = new THREE.InstancedMesh(rockGeometry, new THREE.MeshStandardMaterial({ color: 0x6f7566, roughness: 1 }), 150);
   for (let i = 0; i < 150; i++) {
-    const x = rand(-270, 270), z = rand(-270, 270);
+    const x = rand(-430, 430), z = rand(-430, 430);
+    if (z > -35 && z < 510 && Math.abs(x - pathCenterX(z)) < 6.0) { i--; continue; }
     obj.position.set(x, terrainHeight(x, z) + 0.15, z);
     obj.rotation.set(rand(0, 1), rand(0, Math.PI * 2), rand(0, 1));
-    obj.scale.set(rand(0.15, 0.65), rand(0.12, 0.42), rand(0.18, 0.7));
+    obj.scale.set(rand(0.28, 1.15), rand(0.2, 0.82), rand(0.3, 1.25));
     obj.updateMatrix();
     rocks.setMatrixAt(i, obj.matrix);
   }
@@ -204,7 +307,7 @@ function createSky(scene) {
 export function createForest(scene) {
   const groundTexture = makeGroundTexture();
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(640, 640, 100, 100),
+    new THREE.PlaneGeometry(1000, 1000, 220, 220),
     new THREE.MeshStandardMaterial({ map: groundTexture, color: 0xc4d4a0, roughness: 1 })
   );
   ground.rotation.x = -Math.PI / 2;
@@ -217,6 +320,7 @@ export function createForest(scene) {
   ground.receiveShadow = true;
   scene.add(ground);
 
+  createPath(scene);
   createTrees(scene);
   createGroundDetails(scene);
   createSky(scene);

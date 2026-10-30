@@ -18,7 +18,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x9eae9d, 0.0025);
+scene.fog = new THREE.FogExp2(0xa6b4a2, 0.00215);
 const camera = new THREE.PerspectiveCamera(78, window.innerWidth / window.innerHeight, 0.1, 1100);
 camera.rotation.order = 'YXZ';
 
@@ -26,7 +26,7 @@ scene.add(new THREE.HemisphereLight(0xd6e9ed, 0x53613e, 1.65));
 const sun = new THREE.DirectionalLight(0xffe7bf, 2.15);
 sun.position.set(-90, 150, 70);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1536, 1536);
+sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.left = -85;
 sun.shadow.camera.right = 85;
 sun.shadow.camera.top = 85;
@@ -95,11 +95,11 @@ function updatePlayer(dt) {
   const inputLength = Math.hypot(forwardInput, sideInput);
   player.isMoving = inputLength > 0.01;
   const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  const speed = running ? 12.5 : 6.2;
+  const speed = running ? 8.8 : 4.6;
 
   if (player.isMoving) {
-    const forward = new THREE.Vector3(Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-    const right = new THREE.Vector3(Math.cos(player.yaw), 0, Math.sin(player.yaw));
+    const forward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+    const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
     const direction = forward.multiplyScalar(forwardInput).add(right.multiplyScalar(sideInput)).normalize();
     player.position.addScaledVector(direction, speed * dt);
   }

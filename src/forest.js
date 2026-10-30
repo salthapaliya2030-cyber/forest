@@ -150,6 +150,7 @@ function createSharedAssets() {
 
   return {
     groundTexture: ground,
+    groundMaterial: new THREE.MeshStandardMaterial({ map: ground, color: 0xc3d09e, roughness: 1 }),
     pathMaterial: new THREE.MeshStandardMaterial({ map: path, color: 0xc7b38c, roughness: 1, side: THREE.DoubleSide }),
     trunkMaterial: new THREE.MeshStandardMaterial({ map: bark, bumpMap: bark, bumpScale: 0.055, color: 0xe0c09b, roughness: 1 }),
     branchMaterial: new THREE.MeshStandardMaterial({ map: bark, bumpMap: bark, bumpScale: 0.035, color: 0xb58b65, roughness: 1 }),
@@ -162,7 +163,17 @@ function createSharedAssets() {
     branchGeometry: new THREE.CylinderGeometry(0.025, 0.105, 1, 7, 1),
     leafGeometry: new THREE.SphereGeometry(1, 10, 8),
     pineGeometry: new THREE.ConeGeometry(1, 1, 9, 2),
-    grassGeometry: new THREE.BufferGeometry(),
+    grassGeometry: (() => {
+      const geometry = new THREE.BufferGeometry();
+      const vertices = new Float32Array([
+        -0.055, 0, 0, 0.055, 0, 0, -0.02, 0.4, 0,
+        0, 0, -0.055, 0, 0, 0.055, 0.02, 0.36, 0,
+        -0.045, 0, -0.035, 0.045, 0, 0.035, -0.015, 0.32, -0.015
+      ]);
+      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+      geometry.computeVertexNormals();
+      return geometry;
+    })(),
     rockGeometry: new THREE.DodecahedronGeometry(1, 1)
   };
 }
@@ -187,11 +198,9 @@ function createGround(group, originX, originZ, assets) {
     positions.setZ(i, terrainHeight(x, z));
   }
   geometry.computeVertexNormals();
-  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-    map: assets.groundTexture, color: 0xc3d09e, roughness: 1
-  }));
+  const mesh = new THREE.Mesh(geometry, assets.groundMaterial);
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(originX + half, 0, originZ + half);
+  mesh.position.set(half, 0, half);
   mesh.receiveShadow = true;
   group.add(mesh);
 }
@@ -407,11 +416,11 @@ function createSky(scene) {
     new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
-      vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 p=modelMatrix*vec4(position,1.0); vWorldPosition=p.xyz; gl_Position=projectionMatrix*viewMatrix*p; }`,
+      vertexShader: `varying vec3 vSkyPosition; void main(){ vSkyPosition=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
       fragmentShader: `
-        varying vec3 vWorldPosition;
+        varying vec3 vSkyPosition;
         void main(){
-          float h=normalize(vWorldPosition).y;
+          float h=normalize(vSkyPosition).y;
           vec3 horizon=vec3(0.72,0.80,0.72);
           vec3 zenith=vec3(0.25,0.48,0.62);
           float t=smoothstep(-0.12,0.72,h);

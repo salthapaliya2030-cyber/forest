@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#14221b" />
+    <title>Wilderness — First Person Forest</title>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="scene" aria-label="first-person forest"></canvas>
+      <div class="vignette"></div>
+      <div class="hud-top"><span class="brand">WILDERNESS</span><span class="location">UNMAPPED FOREST</span></div>
+      <div class="crosshair" aria-hidden="true"><i></i><b></b></div>
+      <section class="intro" id="intro">
+        <div class="intro-kicker">A QUIET PLACE</div>
+        <h1>THE FOREST</h1>
+        <p>an open world. nothing out here but trees, earth, and sky.</p>
+        <button id="enter" type="button">enter the forest <span>↗</span></button>
+        <div class="control-hint">wasd to walk&nbsp; · &nbsp;mouse to look&nbsp; · &nbsp;shift to run&nbsp; · &nbsp;space to jump</div>
+      </section>
+      <div class="bottom-hint" id="bottomHint">click to capture mouse · esc to release</div>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
